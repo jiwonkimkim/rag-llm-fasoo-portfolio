@@ -1,0 +1,34 @@
+# FastAPI Backend Dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies (including build tools for Python packages)
+RUN apt-get update && apt-get install -y \
+    curl \
+    gcc \
+    g++ \
+    build-essential \
+    python3-dev \
+    zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install Python dependencies
+COPY requirements.txt /app/
+COPY visualizer/requirements.txt /app/visualizer/
+RUN pip install --no-cache-dir -r /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/visualizer/requirements.txt
+
+# Copy config and source code
+COPY config/ /app/config/
+COPY src/ /app/src/
+COPY visualizer/api/ /app/visualizer/api/
+
+# Set Python path
+ENV PYTHONPATH=/app
+
+# Expose port
+EXPOSE 8000
+
+# Run the application
+CMD ["uvicorn", "visualizer.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

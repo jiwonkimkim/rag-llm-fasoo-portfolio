@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  # FastAPI Backend (Python)
+  fastapi:
+    build:
+      context: .
+      dockerfile: visualizer/Dockerfile.api
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - API_AUTH_KEY=${API_AUTH_KEY}
+      - CORS_ALLOW_ORIGINS=${CORS_ALLOW_ORIGINS}
+      - PYTHONPATH=/app
+    volumes:
+      - ./data:/app/data
+      - huggingface_cache:/root/.cache/huggingface
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # NestJS API Gateway (Node.js)
+  nestjs:
+    build:
+      context: ./web-visualizer/backend
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      - FASTAPI_URL=http://fastapi:8000
+      - API_AUTH_KEY=${API_AUTH_KEY}
+      - CORS_ALLOW_ORIGINS=${CORS_ALLOW_ORIGINS}
+    depends_on:
+      fastapi:
+        condition: service_healthy
+    networks:
+      - rag-network
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./web-visualizer/frontend
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - nestjs
+    networks:
+      - rag-network
+
+  # n8n Workflow Automation (Optional)
+  n8n:
+    image: n8nio/n8n:latest
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD}
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5678/
+      - GENERIC_TIMEZONE=Asia/Seoul
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./visualizer/n8n:/home/node/workflows:ro
+    networks:
+      - rag-network
+    profiles:
+      - n8n  # Optional: docker-compose --profile n8n up
+
+networks:
+  rag-network:
+    driver: bridge
+
+volumes:
+  n8n_data:
+  huggingface_cache:
