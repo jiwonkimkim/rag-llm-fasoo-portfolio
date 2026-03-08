@@ -1,7 +1,10 @@
 # Triple C RAG Portfolio
 
-문서/웹 데이터를 수집해 RAG(Retrieval-Augmented Generation) 질의를 수행하는 Python 기반 프로젝트입니다.  
-이 문서는 저장소에 구현된 내용만 기준으로, 채용 포트폴리오 관점에서 프로젝트를 정리합니다.
+문서/웹 데이터를 수집해 RAG(Retrieval-Augmented Generation) 질의를 수행하는 Python 기반 프로젝트입니다. 
+
+- "RAG를 단계별 모듈로 분리해, 벡터DB/임베더/리트리버 전략을 교체하며 실험할 수 있게 구성했습니다."
+- "Hybrid Retrieval과 프롬프트 규칙, fallback 테스트를 통해 답변 신뢰성을 높이려는 구현을 포함했습니다."
+- "보안/운영 관점에서는 URL 검증, 예외 수집, 재시도 로직 같은 기본 안전장치를 코드에 반영했습니다."
 
 ## 1) 프로젝트 요약
 - 데이터 수집부터 답변 생성까지 RAG 파이프라인을 모듈 단위로 분리해 구현
@@ -49,10 +52,6 @@ User Query -> Retriever -> PromptBuilder -> LLMClient -> ResponseParser
 | 보안 리스크 인지 및 기본 대응 | 이미지 다운로드 경로의 URL/호스트 검증(SSRF 완화 목적) |
 | 운영 안정성 고려 | 재시도(backoff), 예외 수집, timeout/오류 처리 코드 |
 
-주의:
-- 위 표는 "직접 구현/확인 가능한 코드" 기준입니다.
-- 법적 리스크 진단 체계나 규제 분석 문서는 본 저장소의 주 구현 범위가 아닙니다.
-
 ## 5) 주요 구현 포인트
 ### 5-1. Hybrid Retrieval
 - Dense + Sparse 결과를 RRF로 결합
@@ -99,12 +98,8 @@ python scripts/run_rag.py --query "질문 내용"
 pytest tests/
 ```
 
-## 7) 포트폴리오 설명용 문장(면접/서류)
-- "RAG를 단계별 모듈로 분리해, 벡터DB/임베더/리트리버 전략을 교체하며 실험할 수 있게 구성했습니다."
-- "Hybrid Retrieval과 프롬프트 규칙, fallback 테스트를 통해 답변 신뢰성을 높이려는 구현을 포함했습니다."
-- "보안/운영 관점에서는 URL 검증, 예외 수집, 재시도 로직 같은 기본 안전장치를 코드에 반영했습니다."
 
-## 8) 참고 문서
+## 7) 참고 문서
 - `QUICKSTART.md`
 - `visualizer/README.md`
 - `docs/troubleshooting/422_error_analysis.md`
