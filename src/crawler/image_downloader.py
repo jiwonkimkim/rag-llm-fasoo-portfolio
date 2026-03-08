@@ -11,6 +11,7 @@ import requests
 import socket
 import ipaddress
 import logging
+import re
 from pathlib import Path
 from dataclasses import dataclass, asdict
 from datetime import datetime
@@ -44,6 +45,20 @@ class ImageDownloader:
         self.base_dir.mkdir(parents=True, exist_ok=True)
         self.metadata_file = self.base_dir / "metadata.json"
         self._load_metadata()
+
+    def _sanitize_segment(self, value: str, fallback: str) -> str:
+        sanitized = re.sub(r"[^A-Za-z0-9._-]+", "_", (value or "").strip())
+        sanitized = sanitized.strip("._-")
+        return sanitized[:64] if sanitized else fallback
+
+    def _resolve_local_path(self, local_path: str) -> Path | None:
+        base_resolved = self.base_dir.resolve()
+        candidate = (self.base_dir / local_path).resolve()
+        try:
+            candidate.relative_to(base_resolved)
+        except ValueError:
+            return None
+        return candidate
 
     def _load_metadata(self):
         """메타데이터 파일 로드"""
@@ -157,12 +172,14 @@ class ImageDownloader:
             if not content_type.startswith("image/"):
                 logger.warning("Blocked non-image response from URL: %s (%s)", url, content_type)
                 return None
+            safe_source = self._sanitize_segment(source, "unknown")
+            safe_product_id = self._sanitize_segment(product_id, "item")
             ext = self._get_file_extension(url, content_type)
-            filename = self._generate_filename(url, product_id) + ext
+            filename = self._generate_filename(url, safe_product_id) + ext
 
             # 날짜별 디렉토리 생성
             date_str = datetime.now().strftime("%Y-%m-%d")
-            save_dir = self.base_dir / source / date_str
+            save_dir = self.base_dir / safe_source / date_str
             save_dir.mkdir(parents=True, exist_ok=True)
 
             file_path = save_dir / filename
@@ -176,12 +193,12 @@ class ImageDownloader:
             downloaded_image = DownloadedImage(
                 id=image_id,
                 original_url=url,
-                local_path=str(file_path.relative_to(self.base_dir)),
+                local_path=file_path.resolve().relative_to(self.base_dir.resolve()).as_posix(),
                 filename=filename,
                 size_bytes=len(response.content),
-                product_id=product_id,
+                product_id=safe_product_id,
                 product_title=product_title,
-                source=source,
+                source=safe_source,
                 downloaded_at=datetime.now().isoformat(),
                 metadata=metadata or {}
             )
@@ -239,7 +256,7 @@ class ImageDownloader:
     def get_image_path(self, image_id: str) -> Path | None:
         """이미지 파일 경로 반환"""
         if image_id in self._metadata["images"]:
-            return self.base_dir / self._metadata["images"][image_id]["local_path"]
+            return self._resolve_local_path(self._metadata["images"][image_id]["local_path"])
         return None
 
     def delete_images(self, image_ids: list[str]) -> int:
@@ -256,11 +273,11 @@ class ImageDownloader:
         for image_id in image_ids:
             if image_id in self._metadata["images"]:
                 image_info = self._metadata["images"][image_id]
-                file_path = self.base_dir / image_info["local_path"]
+                file_path = self._resolve_local_path(image_info["local_path"])
 
                 # 파일 삭제
                 try:
-                    if file_path.exists():
+                    if file_path and file_path.exists():
                         file_path.unlink()
                 except Exception as e:
                     logger.exception("Error deleting file %s: %s", file_path, e)

@@ -6,6 +6,8 @@ Updated: Added demo mode for collect search endpoint.
 import sys
 import os
 import logging
+import hmac
+import re
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -104,20 +106,42 @@ app = FastAPI(
 )
 
 api_auth_key = os.getenv("API_AUTH_KEY")
+require_api_auth = os.getenv("REQUIRE_API_AUTH", "true").lower() in {"1", "true", "yes", "on"}
+allow_model_install = os.getenv("ALLOW_MODEL_INSTALL", "false").lower() in {"1", "true", "yes", "on"}
+allow_destructive_apis = os.getenv("ALLOW_DESTRUCTIVE_APIS", "false").lower() in {"1", "true", "yes", "on"}
 cors_origins = _parse_cors_origins()
 allow_all_origins = cors_origins == ["*"]
+_SAFE_COLLECTION_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+
+if require_api_auth and not api_auth_key:
+    raise RuntimeError(
+        "API auth is required but API_AUTH_KEY is missing. "
+        "Set API_AUTH_KEY or disable REQUIRE_API_AUTH explicitly."
+    )
+
+
+def _validate_collection_name(collection_name: str) -> str:
+    if not _SAFE_COLLECTION_RE.fullmatch(collection_name):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Invalid collection_name. Use 1-64 chars: "
+                "letters, numbers, dot, underscore, hyphen."
+            ),
+        )
+    return collection_name
 
 
 @app.middleware("http")
 async def enforce_api_key(request: Request, call_next):
-    if not api_auth_key:
+    if not require_api_auth:
         return await call_next(request)
 
     if request.url.path in {"/health", "/docs", "/openapi.json", "/redoc"}:
         return await call_next(request)
 
-    request_api_key = request.headers.get("x-api-key")
-    if request_api_key != api_auth_key:
+    request_api_key = request.headers.get("x-api-key") or ""
+    if not hmac.compare_digest(request_api_key, api_auth_key or ""):
         return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
     return await call_next(request)
 
@@ -398,12 +422,18 @@ async def embed_texts_legacy(request: EmbedRequest):
 # Vector Store endpoints
 def get_vector_store(store_type: VectorStoreType, collection_name: str):
     """Get vector store instance based on type."""
-    persist_dir = project_root / "data" / "vectordb" / collection_name
+    safe_collection_name = _validate_collection_name(collection_name)
+    vectordb_root = (project_root / "data" / "vectordb").resolve()
+    persist_dir = (vectordb_root / safe_collection_name).resolve()
+    try:
+        persist_dir.relative_to(vectordb_root)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid collection_name path")
     persist_dir.mkdir(parents=True, exist_ok=True)
 
     if store_type == VectorStoreType.CHROMA:
         from src.vectorstore.chroma_store import ChromaStore
-        return ChromaStore(collection_name=collection_name, persist_directory=str(persist_dir))
+        return ChromaStore(collection_name=safe_collection_name, persist_directory=str(persist_dir))
     elif store_type == VectorStoreType.FAISS:
         from src.vectorstore.faiss_store import FAISSStore
         return FAISSStore(persist_directory=str(persist_dir))
@@ -555,6 +585,8 @@ async def delete_store(
     store_type: VectorStoreType = VectorStoreType.CHROMA,
 ):
     """Permanently delete a collection from the store."""
+    if not allow_destructive_apis:
+        raise HTTPException(status_code=403, detail="Destructive APIs are disabled")
     try:
         store = get_vector_store(store_type, collection_name)
         store.delete_collection()
@@ -1133,6 +1165,8 @@ async def check_model_status(request: ModelStatusRequest):
 @app.post("/api/v1/model/install", response_model=ModelInstallResponse, tags=["Model Management"])
 async def install_model(request: ModelInstallRequest):
     """Install/download a model."""
+    if not allow_model_install:
+        raise HTTPException(status_code=403, detail="Model install API is disabled")
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
 
@@ -1421,6 +1455,8 @@ async def get_collected_image(image_id: str):
 @app.delete("/api/v1/collect/images", response_model=CollectDeleteResponse, tags=["Collect Mode"])
 async def delete_collected_images(request: CollectDeleteRequest):
     """선택된 이미지 삭제"""
+    if not allow_destructive_apis:
+        raise HTTPException(status_code=403, detail="Destructive APIs are disabled")
     try:
         downloader = get_image_downloader()
         deleted_count = downloader.delete_images(request.image_ids)

@@ -1,8 +1,10 @@
 """Pydantic models for API request/response."""
 
 from pydantic import BaseModel, Field
+from pydantic import field_validator
 from typing import Any
 from enum import Enum
+import re
 
 
 # Enums for component selection
@@ -82,6 +84,13 @@ class RetrieveRequest(BaseModel):
     embedder_type: EmbedderType = Field(default=EmbedderType.HUGGINGFACE, description="Embedder for query")
     model_name: str | None = Field(default="intfloat/multilingual-e5-base", description="Embedding model name")
     api_key: str | None = Field(default=None, description="API key for OpenAI embedder")
+
+    @field_validator("collection_name")
+    @classmethod
+    def validate_collection_name(cls, v: str) -> str:
+        if not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", v):
+            raise ValueError("collection_name must match [A-Za-z0-9._-]{1,64}")
+        return v
 
 
 class GenerateRequest(BaseModel):
@@ -201,6 +210,13 @@ class StoreRequest(BaseModel):
     success_documents: int | None = Field(default=None, alias="successDocuments", description="Successfully processed documents")
     failed_documents: int | None = Field(default=None, alias="failedDocuments", description="Failed documents")
 
+    @field_validator("collection_name")
+    @classmethod
+    def validate_collection_name(cls, v: str) -> str:
+        if not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", v):
+            raise ValueError("collection_name must match [A-Za-z0-9._-]{1,64}")
+        return v
+
 
 class StoreResponse(BaseModel):
     """Response after storing embeddings."""
@@ -280,6 +296,13 @@ class QuickQueryRequest(BaseModel):
     llm_model: str = Field(default="llama-3.3-70b-versatile", description="LLM model for generation")
     temperature: float = Field(default=0.7, description="Temperature for generation")
     api_key: str | None = Field(default=None, description="API key (for OpenAI models)")
+
+    @field_validator("collection_name")
+    @classmethod
+    def validate_collection_name(cls, v: str) -> str:
+        if not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", v):
+            raise ValueError("collection_name must match [A-Za-z0-9._-]{1,64}")
+        return v
 
 
 class QuickQueryResponse(BaseModel):
